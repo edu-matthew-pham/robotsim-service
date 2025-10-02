@@ -55,6 +55,8 @@ def parse_stmt(stmt):
         return parse_while(stmt)
     elif isinstance(stmt, ast.If):
         return parse_if(stmt)
+    elif isinstance(stmt, ast.Break):
+        return {"type": "break"}
     
     return None
 
@@ -120,14 +122,20 @@ def parse_if(if_node):
             body_instructions.append(instr)
     
     orelse_instructions = []
-    for stmt in if_node.orelse:
-        instr = parse_stmt(stmt)
-        if instr:
-            orelse_instructions.append(instr)
+    if if_node.orelse:
+        for stmt in if_node.orelse:
+            instr = parse_stmt(stmt)
+            if instr:
+                orelse_instructions.append(instr)
     
-    return {
+    result = {
         "type": "if",
         "condition": ast.unparse(if_node.test),
-        "body": body_instructions,
-        "orelse": orelse_instructions if orelse_instructions else None
+        "body": body_instructions
     }
+    
+    # Only add orelse if it exists and has content
+    if orelse_instructions:
+        result["orelse"] = orelse_instructions
+    
+    return result
