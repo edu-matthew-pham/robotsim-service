@@ -51,6 +51,17 @@ def parse_stmt(stmt):
                 if instr:
                     instr["await"] = True
                 return instr
+    elif isinstance(stmt, ast.Assign):
+        # Handle variable assignments: x = value
+        if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+            var_name = stmt.targets[0].id
+            # Store the expression as a string to be evaluated later
+            value_expr = ast.unparse(stmt.value)
+            return {
+                "type": "assign",
+                "variable": var_name,
+                "expression": value_expr
+            }
     elif isinstance(stmt, ast.While):
         return parse_while(stmt)
     elif isinstance(stmt, ast.If):
@@ -80,6 +91,12 @@ def parse_call(call_node):
                 return {"type": "motor_start", "motor": obj[-1].lower(), "speed": speed}
             elif method == "stop":
                 return {"type": "motor_stop", "motor": obj[-1].lower()}
+        
+        elif obj == "ir_sensor":
+            if method == "get_direction":
+                return {"type": "ir_direction"}
+            elif method == "get_strength":
+                return {"type": "ir_strength"}
     
     elif isinstance(call_node.func, ast.Name):
         func_name = call_node.func.id
@@ -88,14 +105,22 @@ def parse_call(call_node):
             seconds = call_node.args[0].value if isinstance(call_node.args[0], ast.Constant) else 0
             return {"type": "wait", "seconds": seconds}
         
-        elif func_name == "print" and call_node.args:
-            # Handle print statements
-            arg = call_node.args[0]
-            if isinstance(arg, ast.Constant):
-                return {"type": "print", "message": arg.value}
+        elif func_name == "print":
+            # Handle print statements with multiple arguments
+            if len(call_node.args) == 0:
+                return {"type": "print", "message": ""}
+            elif len(call_node.args) == 1:
+                arg = call_node.args[0]
+                if isinstance(arg, ast.Constant):
+                    return {"type": "print", "message": arg.value}
+                else:
+                    # For expressions, store the unparsed expression
+                    return {"type": "print", "expression": ast.unparse(arg)}
             else:
-                # For expressions, store the unparsed expression
-                return {"type": "print", "expression": ast.unparse(arg)}
+                # Multiple arguments - concatenate them as an expression
+                parts = [ast.unparse(arg) for arg in call_node.args]
+                combined = " + ' ' + ".join(parts)
+                return {"type": "print", "expression": combined}
     
     return None
 
