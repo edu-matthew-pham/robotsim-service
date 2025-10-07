@@ -68,6 +68,10 @@ def parse_stmt(stmt):
         return parse_if(stmt)
     elif isinstance(stmt, ast.Break):
         return {"type": "break"}
+    elif isinstance(stmt, ast.FunctionDef):
+        return parse_function(stmt)
+    elif isinstance(stmt, ast.Return):
+        return parse_return(stmt)
     
     return None
 
@@ -121,6 +125,21 @@ def parse_call(call_node):
                 parts = [ast.unparse(arg) for arg in call_node.args]
                 combined = " + ' ' + ".join(parts)
                 return {"type": "print", "expression": combined}
+        
+        else:
+            # User-defined function call
+            args = []
+            for arg in call_node.args:
+                if isinstance(arg, ast.Constant):
+                    args.append({"type": "constant", "value": arg.value})
+                else:
+                    args.append({"type": "expression", "value": ast.unparse(arg)})
+            
+            return {
+                "type": "function_call",
+                "name": func_name,
+                "args": args
+            }
     
     return None
 
@@ -164,3 +183,30 @@ def parse_if(if_node):
         result["orelse"] = orelse_instructions
     
     return result
+
+def parse_function(func_node):
+    """Parse function definitions"""
+    params = [arg.arg for arg in func_node.args.args]
+    
+    body_instructions = []
+    for stmt in func_node.body:
+        instr = parse_stmt(stmt)
+        if instr:
+            body_instructions.append(instr)
+    
+    return {
+        "type": "function_def",
+        "name": func_node.name,
+        "params": params,
+        "body": body_instructions
+    }
+
+def parse_return(return_node):
+    """Parse return statements"""
+    if return_node.value is None:
+        return {"type": "return", "value": None}
+    
+    if isinstance(return_node.value, ast.Constant):
+        return {"type": "return", "value": return_node.value.value}
+    else:
+        return {"type": "return", "expression": ast.unparse(return_node.value)}
