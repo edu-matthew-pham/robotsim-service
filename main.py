@@ -62,6 +62,8 @@ def parse_stmt(stmt):
                 "variable": var_name,
                 "expression": value_expr
             }
+    elif isinstance(stmt, ast.For):
+        return parse_for(stmt)
     elif isinstance(stmt, ast.While):
         return parse_while(stmt)
     elif isinstance(stmt, ast.If):
@@ -142,6 +144,22 @@ def parse_call(call_node):
             }
     
     return None
+
+def parse_for(for_node):
+    """Parse for loops"""
+    body_instructions = []
+    for stmt in for_node.body:
+        instr = parse_stmt(stmt)
+        if instr:
+            body_instructions.append(instr)
+    
+    return {
+        "type": "for",
+        "target": ast.unparse(for_node.target),   # e.g. "i"
+        "iter": ast.unparse(for_node.iter),       # e.g. "range(5)"
+        "body": body_instructions
+    }
+
 
 def parse_while(while_node):
     """Parse while loops"""
