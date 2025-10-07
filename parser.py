@@ -52,7 +52,7 @@ def parse_call(call_node: ast.Call) -> Optional[Dict[str, Any]]:
         method = call_node.func.attr
 
         # Motors
-        if obj in ["motor_a", "motor_b"]:
+        if obj in ["motor_a", "motor_b", "motor_c", "motor_d"]:
             if method == "start" and call_node.args:
                 arg = call_node.args[0]
 
