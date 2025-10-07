@@ -1,7 +1,7 @@
 # parser.py
 import ast
 from typing import Any, Dict, List, Optional
-from validator import is_numeric_expr
+from validator import is_numeric_expr, is_boolean_expr
 
 def convert_ast_to_instructions(tree: ast.AST) -> List[Dict[str, Any]]:
     instructions: List[Dict[str, Any]] = []
@@ -132,6 +132,10 @@ def parse_for(for_node: ast.For) -> Dict[str, Any]:
     }
 
 def parse_while(while_node: ast.While) -> Dict[str, Any]:
+    # Validate the condition is a boolean expression
+    if not is_boolean_expr(while_node.test):
+        raise SyntaxError(f"while condition must be a boolean expression, got: {ast.unparse(while_node.test)}")
+    
     body = []
     for s in while_node.body:
         instr = parse_stmt(s)
@@ -140,6 +144,10 @@ def parse_while(while_node: ast.While) -> Dict[str, Any]:
     return {"type": "while", "condition": ast.unparse(while_node.test), "body": body}
 
 def parse_if(if_node: ast.If) -> Dict[str, Any]:
+    # Validate the condition is a boolean expression
+    if not is_boolean_expr(if_node.test):
+        raise SyntaxError(f"if condition must be a boolean expression, got: {ast.unparse(if_node.test)}")
+    
     body = []
     for s in if_node.body:
         instr = parse_stmt(s)

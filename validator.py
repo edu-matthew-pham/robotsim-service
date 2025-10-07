@@ -62,3 +62,59 @@ def is_numeric_expr(node: ast.AST) -> bool:
 
     # Parenthesized expressions fold to the inner value in Python AST, so no special case needed
     return False
+
+
+def is_boolean_expr(node: ast.AST) -> bool:
+    """
+    True if `node` is a boolean expression we can evaluate at runtime:
+    - boolean literals (True, False)
+    - names (variables that might hold booleans)
+    - comparisons (x > 5, x == 10, etc.)
+    - boolean operators (and, or, not)
+    """
+    # Boolean constants: True, False
+    if isinstance(node, ast.Constant) and isinstance(node.value, bool):
+        return True
+    
+    # Names (variables)
+    if isinstance(node, ast.Name):
+        return True
+    
+    # Comparisons: x > 5, x == y, color == "red"
+    # We allow any comparison - GDScript will handle type checking at runtime
+    if isinstance(node, ast.Compare):
+        return True
+    
+    # Boolean operators: and, or
+    if isinstance(node, ast.BoolOp) and isinstance(node.op, (ast.And, ast.Or)):
+        return all(is_boolean_expr(v) for v in node.values)
+    
+    # Unary not
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        return is_boolean_expr(node.operand)
+    
+    return False
+
+
+def is_string_expr(node: ast.AST) -> bool:
+    """
+    True if `node` is a string expression:
+    - string literals
+    - names (variables)
+    - color_sensor.get_color()
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return True
+    
+    if isinstance(node, ast.Name):
+        return True
+    
+    # Check for color_sensor.get_color()
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Attribute):
+            if (isinstance(node.func.value, ast.Name) and 
+                node.func.value.id == "color_sensor" and 
+                node.func.attr == "get_color"):
+                return True
+    
+    return False
