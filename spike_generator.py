@@ -1,5 +1,8 @@
 # spike_generator.py
 from typing import Any, Dict, List
+import io
+import tokenize
+from typing import Tuple
 
 class SpikeCodeGenerator:
     """Generates Spike Prime Python code from parsed instructions."""
@@ -7,10 +10,17 @@ class SpikeCodeGenerator:
     def __init__(self):
         self.indent_level = 0
         self.indent_str = "    "
+        self._standalone = set()
+        self._inline = {}
+        self._src_lines = []
         
-    def generate(self, instructions: List[Dict[str, Any]]) -> str:
+    def generate(self, instructions: List[Dict[str, Any]], src: str) -> str:
         """Generate complete Spike Prime code from instructions."""
-        lines = []
+        # Pre-scan comments
+        standalone, inline, src_lines = self._collect_comments(src)
+        self._standalone, self._inline, self._src_lines = self._collect_comments(src)
+
+        lines: List[str] = []
         
         # Add standard Spike Prime imports
         lines.append("from hub import light_matrix, port")
@@ -56,15 +66,69 @@ class SpikeCodeGenerator:
         lines.append("")
         lines.append("async def main():")
         
-        # Indent and generate code for each instruction
-        self.indent_level = 1
-        for instr in instructions:
-            lines.extend(self._generate_instruction(instr))
         
+        
+        # Indent and generate code for each instruction
+        # Emit code with comments interleaved
+        self.indent_level = 1
+        block_indent = self.indent_str * self.indent_level
+        
+        out: List[str] = []
+        cursor = 1  # 1-based source line pointer
+
+        # sort by source order if lineno present
+        instrs = sorted(instructions, key=lambda d: (d.get("lineno") or 10**9, d.get("end_lineno") or 10**9))
+        
+        def emit_standalone_until(line_exclusive: int):
+            nonlocal cursor
+            while cursor < line_exclusive and cursor <= len(src_lines):
+                if cursor in standalone:
+                    out.append(block_indent + src_lines[cursor - 1].lstrip())
+                cursor += 1
+
+        for instr in instrs:
+            L = instr.get("lineno") or cursor
+
+            # 1) standalone comments before this instruction
+            emit_standalone_until(L)
+
+            # 2) generate code for the instruction
+            emitted = self._generate_instruction(instr)
+            if emitted:
+                # attach inline comments for that source line to the last emitted line
+                if L in inline:
+                    emitted[-1] = emitted[-1] + "  " + "  ".join(inline[L])
+                out.extend(emitted)
+
+            cursor = max(cursor, (instr.get("end_lineno") or L) + 1)
+
+        # 3) trailing standalone comments
+        emit_standalone_until(len(src_lines) + 1)
+
+        lines.extend(out)
         lines.append("")
         lines.append("runloop.run(main())")
-        
         return "\n".join(lines)
+
+    
+    # NEW: collect comments
+    def _collect_comments(self, src: str) -> Tuple[set, Dict[int, List[str]], List[str]]:
+        standalone = set()
+        inline: Dict[int, List[str]] = {}
+        src_lines = src.splitlines()
+        if not src:
+            return standalone, inline, src_lines
+        for tok in tokenize.generate_tokens(io.StringIO(src).readline):
+            if tok.type != tokenize.COMMENT:
+                continue
+            ln = tok.start[0]
+            text = tok.string  # includes leading '#'
+            # Entire line is a comment?
+            if tok.line.strip().startswith('#') and tok.line.strip() == text.strip():
+                standalone.add(ln)
+            else:
+                inline.setdefault(ln, []).append(text)
+        return standalone, inline, src_lines
     
     def _uses_motors(self, instructions: List[Dict[str, Any]]) -> bool:
         """Check if any instruction uses motors."""
@@ -110,10 +174,10 @@ class SpikeCodeGenerator:
             motor = instr["motor"]
             if "speed" in instr:
                 speed = instr["speed"]
-                lines.append(f"{indent}motor.run(MOTOR_{motor.upper()}, {speed})")
+                lines.append(f"{indent}motor.run(MOTOR_{motor.upper()}, int({speed}))")
             elif "speed_expr" in instr:
                 expr = self._translate_expression(instr["speed_expr"])
-                lines.append(f"{indent}motor.run(MOTOR_{motor.upper()}, {expr})")
+                lines.append(f"{indent}motor.run(MOTOR_{motor.upper()}, int({expr}))")
         
         elif instr_type == "motor_stop":
             motor = instr["motor"]
@@ -145,27 +209,15 @@ class SpikeCodeGenerator:
         elif instr_type == "for":
             target = instr["target"]
             iter_expr = self._translate_expression(instr["iter"])
-            lines.append(f"{indent}for {target} in {iter_expr}:")
-            self.indent_level += 1
-            for body_instr in instr["body"]:
-                lines.extend(self._generate_instruction(body_instr))
-            self.indent_level -= 1
+            lines.extend(self._emit_block(f"for {target} in {iter_expr}:", instr))
         
         elif instr_type == "while":
             condition = self._translate_expression(instr["condition"])
-            lines.append(f"{indent}while {condition}:")
-            self.indent_level += 1
-            for body_instr in instr["body"]:
-                lines.extend(self._generate_instruction(body_instr))
-            self.indent_level -= 1
+            lines.extend(self._emit_block(f"while {condition}:", instr))
         
         elif instr_type == "if":
             condition = self._translate_expression(instr["condition"])
-            lines.append(f"{indent}if {condition}:")
-            self.indent_level += 1
-            for body_instr in instr["body"]:
-                lines.extend(self._generate_instruction(body_instr))
-            self.indent_level -= 1
+            lines.extend(self._emit_block(f"if {condition}:", instr, body_key="body"))
             
             if "orelse" in instr and instr["orelse"]:
                 lines.append(f"{indent}else:")
@@ -180,11 +232,7 @@ class SpikeCodeGenerator:
         elif instr_type == "function_def":
             name = instr["name"]
             params = ", ".join(instr["params"])
-            lines.append(f"{indent}def {name}({params}):")
-            self.indent_level += 1
-            for body_instr in instr["body"]:
-                lines.extend(self._generate_instruction(body_instr))
-            self.indent_level -= 1
+            lines.extend(self._emit_block(f"def {name}({params}):", instr))
             lines.append("")  # Blank line after function
         
         elif instr_type == "return":
@@ -230,10 +278,58 @@ class SpikeCodeGenerator:
             result = result.replace(old, new)
         
         return result
+    
+    def _emit_block(self, header_line: str, instr, body_key: str = "body") -> list[str]:
+        """
+        Emit a compound block:
+        1) header line (e.g., 'while cond:' / 'if cond:' / 'def f():')
+        2) interleave standalone comments between children
+        3) emit children with inline comments
+        Uses instr.lineno/end_lineno when available.
+        """
+        out: list[str] = []
+        indent = self.indent_str * self.indent_level
+        out.append(f"{indent}{header_line}")
+
+        self.indent_level += 1
+        block_indent = self.indent_str * self.indent_level
+
+        block_cursor = (instr.get("lineno") or 0) + 1
+        for child in instr.get(body_key, []):
+            child_L = child.get("lineno") or block_cursor
+            self._emit_standalone_between(out, block_cursor, child_L, block_indent)
+            block_cursor = self._emit_child_instr(child, out, block_indent)
+
+        block_end = (instr.get("end_lineno") or block_cursor)
+        self._emit_standalone_between(out, block_cursor, block_end + 1, block_indent)
+
+        self.indent_level -= 1
+        return out
+    
+    def _emit_standalone_between(self, out, start_line: int, end_exclusive: int, indent: str) -> None:
+        """Emit standalone '#…' lines in [start_line, end_exclusive), indented for this block."""
+        for ln in range(start_line, min(end_exclusive, len(self._src_lines) + 1)):
+            if ln in self._standalone:
+                out.append(indent + self._src_lines[ln - 1].lstrip())
+
+    def _emit_child_instr(self, child, out, block_indent: str) -> int:
+        """Emit one child instruction + attach inline comments. Returns child end line + 1."""
+        child_L = child.get("lineno") or 0
+        child_lines = self._generate_instruction(child)
+        if child_lines:
+            # attach inline comments to the last emitted line for child_L
+            if child_L in self._inline:
+                child_lines[-1] = child_lines[-1] + "  " + "  ".join(self._inline[child_L])
+            out.extend(child_lines)
+        return (child.get("end_lineno") or child_L) + 1
 
 
 # Helper function for the endpoint
-def generate_spike_code(instructions: List[Dict[str, Any]]) -> str:
+def generate_spike_code(instructions: List[Dict[str, Any]], src: str) -> str:
     """Generate Spike Prime code from parsed instructions."""
     generator = SpikeCodeGenerator()
-    return generator.generate(instructions)
+    return generator.generate(instructions, src)
+
+
+
+

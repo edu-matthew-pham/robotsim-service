@@ -11,39 +11,48 @@ def convert_ast_to_instructions(tree: ast.AST) -> List[Dict[str, Any]]:
             instructions.append(instr)
     return instructions
 
+def _with_loc(d, node):
+    d["lineno"] = getattr(node, "lineno", None)
+    d["end_lineno"] = getattr(node, "end_lineno", d["lineno"])
+    return d
+
 def parse_stmt(stmt: ast.stmt) -> Optional[Dict[str, Any]]:
+    # Keep docstrings / triple-quoted blocks as comments
+    if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
+        return _with_loc({"type": "comment_block", "text": stmt.value.value}, stmt)
+
     if isinstance(stmt, ast.Expr):
         if isinstance(stmt.value, ast.Call):
-            return parse_call(stmt.value)
-        elif isinstance(stmt.value, ast.Await):
-            # await <call(...)>
-            call = stmt.value.value
-            if isinstance(call, ast.Call):
-                instr = parse_call(call)
-                if instr:
-                    instr["await"] = True
-                return instr
-    elif isinstance(stmt, ast.Assign):
-        # x = <expr>
-        if len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
-            return {
-                "type": "assign",
-                "variable": stmt.targets[0].id,
-                "expression": ast.unparse(stmt.value),
-            }
+            d = parse_call(stmt.value)
+            return _with_loc(d, stmt) if d else None
+        elif isinstance(stmt.value, ast.Await) and isinstance(stmt.value.value, ast.Call):
+            d = parse_call(stmt.value.value)
+            if d:
+                d["await"] = True
+                return _with_loc(d, stmt)
+            return None
+
+    elif isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
+        return _with_loc({
+            "type": "assign",
+            "variable": stmt.targets[0].id,
+            "expression": ast.unparse(stmt.value),
+        }, stmt)
+
     elif isinstance(stmt, ast.For):
-        return parse_for(stmt)
+        out = parse_for(stmt);  return _with_loc(out, stmt)
     elif isinstance(stmt, ast.While):
-        return parse_while(stmt)
+        out = parse_while(stmt);  return _with_loc(out, stmt)
     elif isinstance(stmt, ast.If):
-        return parse_if(stmt)
+        out = parse_if(stmt);  return _with_loc(out, stmt)
     elif isinstance(stmt, ast.Break):
-        return {"type": "break"}
+        return _with_loc({"type": "break"}, stmt)
     elif isinstance(stmt, ast.FunctionDef):
-        return parse_function(stmt)
+        out = parse_function(stmt);  return _with_loc(out, stmt)
     elif isinstance(stmt, ast.Return):
-        return parse_return(stmt)
+        out = parse_return(stmt);  return _with_loc(out, stmt)
     return None
+
 
 def parse_call(call_node: ast.Call) -> Optional[Dict[str, Any]]:
     # Attribute calls: obj.method(...)

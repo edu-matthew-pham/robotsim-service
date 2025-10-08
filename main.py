@@ -46,7 +46,7 @@ def generate_spike_prime_code(request: CodeRequest):
         print(f"Generated {len(instructions)} instructions")
         
         print("Generating Spike Prime code...")
-        spike_code = generate_spike_code(instructions)
+        spike_code = generate_spike_code(instructions, request.code)
         print(f"Generated code length: {len(spike_code)}")
         
         result = {
