@@ -60,26 +60,32 @@ def parse_call(call_node: ast.Call) -> Optional[Dict[str, Any]]:
         obj = call_node.func.value.id if isinstance(call_node.func.value, ast.Name) else None
         method = call_node.func.attr
 
-        # Motors
-        if obj in ["motor_a", "motor_b", "motor_c", "motor_d"]:
+        # Motors - both legacy (motor_a, motor_b) and abstract (motor_left, motor_right, etc.)
+        motor_names = [
+            "motor_a", "motor_b", "motor_c", "motor_d",  # Legacy
+            "motor_left", "motor_right",  # Differential drive
+            "motor_fl", "motor_fr", "motor_bl", "motor_br",  # Omniwheel
+        ]
+        
+        if obj in motor_names:
             if method == "start" and call_node.args:
                 arg = call_node.args[0]
 
                 # Literal numbers (incl. negative literal)
                 if isinstance(arg, ast.Constant):
-                    return {"type": "motor_start", "motor": obj[-1].lower(), "speed": arg.value}
+                    return {"type": "motor_start", "motor": obj, "speed": arg.value}
                 if isinstance(arg, ast.UnaryOp) and isinstance(arg.op, ast.USub) and isinstance(arg.operand, ast.Constant):
-                    return {"type": "motor_start", "motor": obj[-1].lower(), "speed": -arg.operand.value}
+                    return {"type": "motor_start", "motor": obj, "speed": -arg.operand.value}
 
                 # Validated numeric expression → evaluate at runtime in Godot
                 if is_numeric_expr(arg):
-                    return {"type": "motor_start", "motor": obj[-1].lower(), "speed_expr": ast.unparse(arg)}
+                    return {"type": "motor_start", "motor": obj, "speed_expr": ast.unparse(arg)}
 
                 # Otherwise reject clearly
                 raise SyntaxError("motor.start() expects a numeric expression (e.g., 50, speeds[i], x+5).")
 
             elif method == "stop":
-                return {"type": "motor_stop", "motor": obj[-1].lower()}
+                return {"type": "motor_stop", "motor": obj}
 
         # IR sensor (kept as before—simple commands you already mapped)
         elif obj == "ir_sensor":
