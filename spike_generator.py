@@ -51,6 +51,8 @@ class SpikeCodeGenerator:
             lines.append(SENSOR_IMPORTS["distance_sensor"])
         if uses_gyro and SENSOR_IMPORTS["gyro_sensor"]:
             lines.append(SENSOR_IMPORTS["gyro_sensor"])
+        if uses_ir and SENSOR_IMPORTS["ir_sensor"]:  # Add this line
+            lines.append(SENSOR_IMPORTS["ir_sensor"])  # Add this line
         
         # Add IR sensor educational notes if used
         if uses_ir:

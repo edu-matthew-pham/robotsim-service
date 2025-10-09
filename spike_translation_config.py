@@ -90,7 +90,7 @@ SENSOR_IMPORTS = {
     "color_sensor": "import color_sensor",
     "distance_sensor": "import distance_sensor",
     "gyro_sensor": "from hub import motion_sensor",
-    "ir_sensor": None,
+    "ir_sensor": "import color_sensor",
 }
 
 # Update SENSOR_TRANSLATIONS
@@ -99,8 +99,8 @@ SENSOR_TRANSLATIONS = {
     "distance_sensor.get_distance_cm()": "get_distance()",  # Explicit cm version (same)
     "color_sensor.get_reflected_light()": "color_sensor.reflection(COLOR_SENSOR)",
     "color_sensor.get_color()": "color_sensor.color(COLOR_SENSOR)",
-    "ir_sensor.get_direction()": "distance_sensor.distance(IR_SEEKER_PORT)",
-    "ir_sensor.get_strength()": "IR_SEEKER_PORT.device.get()[2]",
+    "ir_sensor.get_direction()": "color_sensor.rgbi(IR_SEEKER_PORT)[1]",  # Direction (1-12)
+    "ir_sensor.get_strength()": "color_sensor.rgbi(IR_SEEKER_PORT)[2]",  # Strength
     "gyro_sensor.get_angle()": "motion_sensor.tilt_angles()[0]",
     "gyro_sensor.get_rate()": "motion_sensor.angular_velocity(motion_sensor.YAW)",
 }
@@ -109,9 +109,9 @@ SENSOR_TRANSLATIONS = {
 EDUCATIONAL_NOTES = {
     "ir_sensor": """
 # IR Seeker Setup:
-# Building Block Robotics IR Seeker appears as a distance/color sensor
-# Standard Mode: Use as distance sensor for direction only
-# Advanced Mode: Use hub.port.X.device for direction + strength
+# Building Block Robotics IR Seeker appears as a color sensor
+# Direction (1-12): Clock positions, where 12 = straight ahead
+# Strength: Signal strength (higher = closer/stronger signal)
 # See: https://irseeker.buildingblockrobotics.com/guides/spike-prime""",
     
     "port_configuration": """
