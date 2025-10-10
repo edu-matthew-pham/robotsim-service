@@ -230,7 +230,13 @@ class SpikeCodeGenerator:
         elif instr_type == "assign":
             var = instr["variable"]
             expr = self._translate_expression(instr["expression"])
-            lines.append(f"{indent}{var} = {expr}")
+            
+            # Check if expression looks like a function call (contains parentheses and not a known sensor/built-in)
+            if "(" in expr and not any(sensor in expr for sensor in ["get_distance", "get_color", "get_reflected_light", "get_angle", "get_rate", "range"]):
+                # It's likely a user function call - add await
+                lines.append(f"{indent}{var} = await {expr}")
+            else:
+                lines.append(f"{indent}{var} = {expr}")
         
         elif instr_type == "for":
             target = instr["target"]
